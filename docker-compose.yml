@@ -1,0 +1,63 @@
+version: "3.9"
+
+services:
+  # Smart Contract Auditor
+  auditor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: contract-auditor
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - AUDIT_SEVERITY_THRESHOLD=medium
+      - AUDIT_GENERATE_POC=true
+    volumes:
+      # Mount contracts directory
+      - ./contracts:/app/contracts:ro
+      # Mount reports output
+      - ./reports:/app/reports
+    networks:
+      - auditor-network
+    command: ["audit", "/app/contracts", "--output", "/app/reports/audit.md"]
+
+  # Development environment with all tools
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: contract-auditor-dev
+    profiles:
+      - dev
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./contracts:/app/contracts
+      - ./reports:/app/reports
+    networks:
+      - auditor-network
+    command: ["bash"]
+    stdin_open: true
+    tty: true
+
+  # Run tests
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: contract-auditor-test
+    profiles:
+      - test
+    environment:
+      - AUDIT_MOCK_MODE=true
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+    networks:
+      - auditor-network
+    command: ["pytest", "tests/", "-v", "--cov=contract_auditor"]
+
+networks:
+  auditor-network:
+    driver: bridge
