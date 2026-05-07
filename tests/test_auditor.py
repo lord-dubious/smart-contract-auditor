@@ -1,9 +1,7 @@
 """Tests for the main contract auditor."""
 
-import pytest
-
-from contract_auditor.models import AuditConfig, Severity
 from contract_auditor.auditor import ContractAuditor, create_auditor
+from contract_auditor.models import AuditConfig
 
 
 class TestContractAuditor:
@@ -92,6 +90,21 @@ class TestAuditSource:
         result = await auditor.audit_source(vulnerable_source_code)
 
         assert result.total_findings > 0
+
+    async def test_slither_failure_adds_analysis_warning(self):
+        """Test Slither tool failure is visible in the audit result."""
+        config = AuditConfig(
+            mock_mode=False,
+            slither_path="/missing/slither",
+            generate_poc=False,
+        )
+        auditor = ContractAuditor(config)
+
+        result = await auditor.audit_source("contract Empty {}", name="Empty")
+
+        assert result.total_findings == 0
+        assert result.analysis_warnings
+        assert "Slither binary not found" in result.analysis_warnings[0]
 
 
 class TestAuditDirectory:

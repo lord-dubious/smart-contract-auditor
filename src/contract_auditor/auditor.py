@@ -10,6 +10,8 @@ from typing import Any
 
 import structlog
 
+from contract_auditor.analyzer import SlitherAnalyzer, create_analyzer
+from contract_auditor.enricher import VulnerabilityEnricher, create_enricher
 from contract_auditor.models import (
     AuditConfig,
     AuditResult,
@@ -17,8 +19,6 @@ from contract_auditor.models import (
     ContractInfo,
     Severity,
 )
-from contract_auditor.analyzer import SlitherAnalyzer, create_analyzer
-from contract_auditor.enricher import VulnerabilityEnricher, create_enricher
 from contract_auditor.poc_generator import PoCGenerator, create_poc_generator
 
 logger = structlog.get_logger()
@@ -87,6 +87,7 @@ class ContractAuditor:
             duration_seconds=duration,
             verified_vulnerabilities=result.verified_vulnerabilities,
             successful_exploits=result.successful_exploits,
+            analysis_warnings=result.analysis_warnings,
         )
 
     async def audit_directory(self, dir_path: str) -> AuditResult:
@@ -137,6 +138,7 @@ class ContractAuditor:
             duration_seconds=duration,
             verified_vulnerabilities=result.verified_vulnerabilities,
             successful_exploits=result.successful_exploits,
+            analysis_warnings=result.analysis_warnings,
         )
 
     async def audit_source(self, source_code: str, name: str = "Contract") -> AuditResult:
@@ -179,6 +181,7 @@ class ContractAuditor:
             duration_seconds=duration,
             verified_vulnerabilities=result.verified_vulnerabilities,
             successful_exploits=result.successful_exploits,
+            analysis_warnings=result.analysis_warnings,
         )
 
     async def _run_audit_pipeline(self, contracts: list[ContractInfo]) -> AuditResult:
@@ -199,10 +202,19 @@ class ContractAuditor:
         # Step 1: Run Slither analysis
         logger.info("running_static_analysis", contracts=len(contracts))
         all_findings = []
+        analysis_warnings = []
 
         for contract in contracts:
             findings = await self.analyzer.analyze_contract(contract)
             all_findings.extend(findings)
+            if self.analyzer.last_run_error:
+                warning = f"{contract.name}: {self.analyzer.last_run_error}"
+                analysis_warnings.append(warning)
+                logger.warning(
+                    "static_analysis_incomplete",
+                    contract=contract.name,
+                    warning=warning,
+                )
 
         logger.info("static_analysis_complete", findings=len(all_findings))
 
@@ -257,6 +269,7 @@ class ContractAuditor:
             started_at=started_at,
             verified_vulnerabilities=verified_vulnerabilities,
             successful_exploits=successful_exploits,
+            analysis_warnings=analysis_warnings,
         )
 
     def _load_contract(self, file_path: str) -> ContractInfo:
