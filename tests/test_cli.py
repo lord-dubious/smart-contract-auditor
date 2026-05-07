@@ -1,10 +1,8 @@
 """Tests for CLI interface."""
 
-import pytest
 from typer.testing import CliRunner
 
 from contract_auditor.cli import app
-
 
 runner = CliRunner()
 
@@ -91,7 +89,7 @@ class TestHelpOutput:
         """Test main help output."""
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
-        assert "AI-powered" in result.stdout or "smart contract" in result.stdout.lower()
+        assert "smart contract" in result.stdout.lower()
 
     def test_audit_help(self):
         """Test audit command help."""

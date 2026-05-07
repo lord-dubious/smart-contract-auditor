@@ -3,23 +3,20 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.table import Table
 
-from contract_auditor.models import AuditConfig, Severity
 from contract_auditor.auditor import ContractAuditor, create_auditor
+from contract_auditor.models import AuditConfig, AuditResult, Severity
 
 app = typer.Typer(
     name="contract-auditor",
-    help="AI-powered smart contract security auditor",
+    help="Experimental smart contract audit pipeline",
     add_completion=False,
 )
 console = Console()
@@ -28,7 +25,7 @@ console = Console()
 @app.command()
 def audit(
     target: str = typer.Argument(..., help="File or directory to audit"),
-    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output file path"),
+    output: str | None = typer.Option(None, "--output", "-o", help="Output file path"),
     format: str = typer.Option("markdown", "--format", "-f", help="Output format (markdown, json)"),
     severity: str = typer.Option("medium", "--severity", "-s", help="Minimum severity to report"),
     generate_poc: bool = typer.Option(True, "--poc/--no-poc", help="Generate PoC exploits"),
@@ -48,7 +45,7 @@ def audit(
     except ValueError:
         console.print(f"[red]Error: Invalid severity: {severity}[/red]")
         console.print("Valid options: critical, high, medium, low, informational")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     config = AuditConfig(
         severity_threshold=severity_enum,
@@ -121,7 +118,7 @@ def version() -> None:
     console.print(f"Smart Contract Auditor v{__version__}")
 
 
-def _display_results(result: "AuditResult", auditor: ContractAuditor) -> None:  # noqa: F821
+def _display_results(result: AuditResult, auditor: ContractAuditor) -> None:
     """Display audit results in a formatted table."""
 
     # Summary panel
