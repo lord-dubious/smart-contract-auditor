@@ -1,4 +1,4 @@
-"""AI-powered vulnerability enricher using Gemini."""
+"""Gemini-backed vulnerability enrichment."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ ENRICHMENT_PROMPT = """You are a senior smart contract security auditor. Analyze
 - Affected Lines: {source_lines}
 
 ## Instructions
-Provide a comprehensive vulnerability analysis in the following JSON format:
+Provide a focused vulnerability analysis in the following JSON format:
 
 ```json
 {{
@@ -78,7 +78,7 @@ Respond with only the JSON, no additional text.
 
 
 class VulnerabilityEnricher:
-    """AI-powered vulnerability analysis and enrichment."""
+    """Vulnerability analysis and enrichment with explicit fallback metadata."""
 
     def __init__(self, config: AuditConfig) -> None:
         """Initialize the vulnerability enricher.
@@ -103,6 +103,7 @@ class VulnerabilityEnricher:
             Enriched vulnerability report
         """
         if self.config.mock_mode:
+            logger.info("enrichment_mock_mode_enabled", detector=finding.detector)
             return self._get_mock_report(finding)
 
         return await self._enrich_with_ai(finding)
@@ -148,6 +149,16 @@ class VulnerabilityEnricher:
             source_lines=", ".join(finding.source_lines),
         )
 
+        if self._model is None:
+            reason = "Gemini model is not configured"
+            logger.warning(
+                "enrichment_model_unavailable",
+                detector=finding.detector,
+                contract=finding.contract_name,
+                reason=reason,
+            )
+            return self._get_fallback_report(finding, reason)
+
         try:
             response = self._model.generate_content(prompt)
             analysis = self._extract_json(response.text)
@@ -166,11 +177,19 @@ class VulnerabilityEnricher:
                 affected_functions=analysis.get("affected_functions", [finding.function_name]),
                 exploitability=analysis.get("exploitability", "Medium"),
                 attack_vector=analysis.get("attack_vector", ""),
+                enrichment_source="gemini",
             )
 
         except Exception as e:
-            logger.error("enrichment_error", error=str(e))
-            return self._get_fallback_report(finding)
+            reason = f"Gemini enrichment failed: {e}"
+            logger.error(
+                "enrichment_error",
+                detector=finding.detector,
+                contract=finding.contract_name,
+                error=str(e),
+                exc_info=True,
+            )
+            return self._get_fallback_report(finding, reason)
 
     def _extract_json(self, text: str) -> dict[str, Any]:
         """Extract JSON from AI response.
@@ -215,6 +234,7 @@ class VulnerabilityEnricher:
         return create_vulnerability_report(
             finding=finding,
             vulnerability_type=vuln_type,
+            enrichment_source="mock",
             **mock_data,
         )
 
@@ -316,7 +336,9 @@ class VulnerabilityEnricher:
                 "attack_vector": "",
             }
 
-    def _get_fallback_report(self, finding: SlitherFinding) -> VulnerabilityReport:
+    def _get_fallback_report(
+        self, finding: SlitherFinding, reason: str = "Gemini enrichment failed"
+    ) -> VulnerabilityReport:
         """Generate fallback report when AI fails.
 
         Args:
@@ -333,8 +355,10 @@ class VulnerabilityEnricher:
             title=f"{finding.detector} vulnerability in {finding.contract_name}",
             detailed_description=finding.description,
             impact="Potential security vulnerability. Manual review recommended.",
-            root_cause="See Slither documentation for details.",
-            remediation="Review the code and apply appropriate security measures.",
+            root_cause="Gemini enrichment was unavailable; see Slither documentation.",
+            remediation="Review the Slither finding manually before treating this as confirmed.",
+            enrichment_source="fallback",
+            enrichment_error=reason,
         )
 
     def classify_vulnerability(self, detector: str) -> VulnerabilityType:
