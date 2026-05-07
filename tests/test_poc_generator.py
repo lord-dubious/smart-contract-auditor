@@ -1,11 +1,9 @@
 """Tests for PoC generator."""
 
-import pytest
-
 from contract_auditor.models import (
     AuditConfig,
-    SlitherFinding,
     Severity,
+    SlitherFinding,
     VulnerabilityType,
     create_vulnerability_report,
 )
@@ -151,6 +149,35 @@ class TestPoCVerification:
         assert poc.executed is True
         assert poc.success is True
         assert poc.gas_used > 0
+        assert poc.generation_source == "mock"
+        assert "MOCK MODE" in poc.execution_output
+
+    async def test_missing_gemini_and_forge_do_not_verify_success(self, sample_finding):
+        """Test external dependency failures are not reported as verified exploits."""
+        config = AuditConfig(
+            mock_mode=False,
+            gemini_api_key="",
+            forge_path="/missing/forge",
+        )
+        generator = PoCGenerator(config)
+
+        report = create_vulnerability_report(
+            finding=sample_finding,
+            vulnerability_type=VulnerabilityType.REENTRANCY,
+            title="Test",
+            detailed_description="Test",
+            impact="Test",
+            root_cause="Test",
+            remediation="Test",
+        )
+
+        poc = await generator.generate_and_verify(report)
+
+        assert poc.generation_source == "fallback"
+        assert "Gemini model is not configured" in poc.generation_error
+        assert poc.executed is False
+        assert poc.success is False
+        assert "Forge binary not found" in poc.execution_output
 
     async def test_batch_generate(self, mock_config, sample_findings):
         """Test batch PoC generation."""
@@ -186,6 +213,7 @@ class TestFoundryTestRunner:
         assert result.test_name == "test_exploit"
         assert result.passed is True
         assert result.gas_used > 0
+        assert "MOCK MODE" in result.logs[0]
 
     def test_run_foundry_test_logs(self, mock_config):
         """Test that mock test returns logs."""
