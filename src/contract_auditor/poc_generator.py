@@ -436,12 +436,16 @@ class PoCGenerator:
         json_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
         if json_match:
             try:
-                return json.loads(json_match.group(1))
+                parsed = json.loads(json_match.group(1))
+                if isinstance(parsed, dict):
+                    return {str(key): value for key, value in parsed.items()}
             except json.JSONDecodeError:
                 pass
 
         try:
-            return json.loads(text)
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                return {str(key): value for key, value in parsed.items()}
         except json.JSONDecodeError:
             pass
 
