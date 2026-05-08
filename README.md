@@ -2,6 +2,11 @@
 
 An experimental smart contract security audit pipeline that combines **Slither** static analysis, optional **Gemini** enrichment, and optional **Foundry** Proof of Concept checks.
 
+## Portfolio Review
+
+- [Architecture](docs/ARCHITECTURE.md) - component boundaries, data flow, external dependencies, and degraded-mode behavior.
+- [Demo Guide](docs/DEMO.md) - safe local walkthrough commands and recruiter-facing talking points.
+
 ## Features
 
 - **Slither Integration**: Runs Slither static analysis for initial vulnerability detection
