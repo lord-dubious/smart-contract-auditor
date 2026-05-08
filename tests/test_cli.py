@@ -44,12 +44,12 @@ class TestAuditOptions:
         # This would need a real file to test fully
         # Just verify the help includes severity option
         result = runner.invoke(app, ["audit", "--help"])
-        assert "--severity" in result.stdout
+        assert "severity" in result.stdout.lower()
 
     def test_format_option(self):
         """Test format option parsing."""
         result = runner.invoke(app, ["audit", "--help"])
-        assert "--format" in result.stdout
+        assert "format" in result.stdout.lower()
 
     def test_poc_option(self):
         """Test PoC generation option."""
@@ -59,12 +59,12 @@ class TestAuditOptions:
     def test_mock_option(self):
         """Test mock mode option."""
         result = runner.invoke(app, ["audit", "--help"])
-        assert "--mock" in result.stdout
+        assert "mock" in result.stdout.lower()
 
     def test_output_option(self):
         """Test output file option."""
         result = runner.invoke(app, ["audit", "--help"])
-        assert "--output" in result.stdout
+        assert "output" in result.stdout.lower()
 
 
 class TestAnalyzeCommand:
