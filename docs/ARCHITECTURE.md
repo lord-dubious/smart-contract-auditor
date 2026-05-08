@@ -13,11 +13,53 @@ This document is written for reviewers who want to understand how the project is
 5. Audit report with warnings
 
 ```mermaid
-flowchart LR
-    A1[Solidity source] --> A2[Slither analysis]
-    A2[Slither analysis] --> A3[Gemini enrichment or fallback report]
-    A3[Gemini enrichment or fallback report] --> A4[Foundry PoC generation/execution]
-    A4[Foundry PoC generation/execution] --> A5[Audit report with warnings]
+flowchart TB
+    classDef input fill:#ecfeff,stroke:#0891b2,stroke-width:2px,color:#164e63
+    classDef core fill:#eef2ff,stroke:#4f46e5,stroke-width:2px,color:#312e81
+    classDef external fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12
+    classDef metadata fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#14532d
+    classDef review fill:#fef2f2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
+
+    Source[/Solidity file or project/]:::input
+    Auditor[/Security reviewer/]:::review
+
+    subgraph Static["Static Analysis Boundary"]
+        SlitherClient[Slither analyzer]:::core
+        Slither[(Slither CLI)]:::external
+        AnalysisWarnings[Analysis warnings]:::metadata
+    end
+
+    subgraph Enrichment["Finding Context"]
+        Enricher[Gemini enrichment]:::core
+        Gemini{{Gemini API optional}}:::external
+        FallbackReport[Fallback report metadata]:::metadata
+    end
+
+    subgraph Verification["PoC Verification Boundary"]
+        PoC[PoC candidate generator]:::core
+        Foundry[(Foundry forge)]:::external
+        Execution[Execution source and output]:::metadata
+    end
+
+    subgraph Output["Audit Deliverable"]
+        Findings[Vulnerability reports]:::review
+        Report[Audit result with warnings]:::review
+    end
+
+    Source --> SlitherClient
+    SlitherClient <-->|static findings| Slither
+    SlitherClient -. missing or failed tool .-> AnalysisWarnings
+    SlitherClient --> Enricher
+    Enricher <-->|optional explanation| Gemini
+    Enricher -. unavailable model .-> FallbackReport
+    Enricher --> Findings
+    Findings --> PoC
+    PoC <-->|test execution| Foundry
+    PoC -. setup or execution failure .-> Execution
+    AnalysisWarnings --> Report
+    FallbackReport --> Report
+    Execution --> Report
+    Report --> Auditor
 ```
 
 ## Main Components
