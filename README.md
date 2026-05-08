@@ -2,10 +2,65 @@
 
 An experimental smart contract security audit pipeline that combines **Slither** static analysis, optional **Gemini** enrichment, and optional **Foundry** Proof of Concept checks.
 
-## Portfolio Review
+## Portfolio Showcase
 
-- [Architecture](docs/ARCHITECTURE.md) - component boundaries, data flow, external dependencies, and degraded-mode behavior.
-- [Demo Guide](docs/DEMO.md) - safe local walkthrough commands and recruiter-facing talking points.
+![Smart Contract Auditor CLI showcase](docs/assets/showcase.png)
+
+- **Architecture deep dive:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- **Demo guide:** [`docs/DEMO.md`](docs/DEMO.md)
+- **Reviewer focus:** Slither findings, Gemini enrichment, Foundry PoC verification boundaries, and fallback labeling.
+
+## Architecture Overview
+
+```mermaid
+flowchart TB
+    classDef input fill:#ecfeff,stroke:#0891b2,stroke-width:2px,color:#164e63
+    classDef core fill:#eef2ff,stroke:#4f46e5,stroke-width:2px,color:#312e81
+    classDef external fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12
+    classDef metadata fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#14532d
+    classDef review fill:#fef2f2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
+
+    Source[/Solidity file or project/]:::input
+    Auditor[/Security reviewer/]:::review
+
+    subgraph Static["Static Analysis Boundary"]
+        SlitherClient[Slither analyzer]:::core
+        Slither[(Slither CLI)]:::external
+        AnalysisWarnings[Analysis warnings]:::metadata
+    end
+
+    subgraph Enrichment["Finding Context"]
+        Enricher[Gemini enrichment]:::core
+        Gemini{{Gemini API optional}}:::external
+        FallbackReport[Fallback report metadata]:::metadata
+    end
+
+    subgraph Verification["PoC Verification Boundary"]
+        PoC[PoC candidate generator]:::core
+        Foundry[(Foundry forge)]:::external
+        Execution[Execution source and output]:::metadata
+    end
+
+    subgraph Output["Audit Deliverable"]
+        Findings[Vulnerability reports]:::review
+        Report[Audit result with warnings]:::review
+    end
+
+    Source --> SlitherClient
+    SlitherClient <-->|static findings| Slither
+    SlitherClient -. missing or failed tool .-> AnalysisWarnings
+    SlitherClient --> Enricher
+    Enricher <-->|optional explanation| Gemini
+    Enricher -. unavailable model .-> FallbackReport
+    Enricher --> Findings
+    Findings --> PoC
+    PoC <-->|test execution| Foundry
+    PoC -. setup or execution failure .-> Execution
+    AnalysisWarnings --> Report
+    FallbackReport --> Report
+    Execution --> Report
+    Report --> Auditor
+```
 
 ## Features
 
@@ -45,44 +100,6 @@ An experimental smart contract security audit pipeline that combines **Slither**
 - Verify findings against source code, compiler settings, deployment assumptions, and protocol context.
 - Do not treat mock mode output as real security evidence.
 - Review generated PoCs before running them against real projects or live infrastructure.
-
-## Architecture
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                        Smart Contract Auditor Pipeline                      │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────┐    ┌──────────────────┐    ┌───────────────────────────┐  │
-│  │   Solidity  │───▶│ Slither Analyzer │───▶│   AI Vulnerability       │  │
-│  │   Contracts │    │ (Static Analysis)│    │   Enricher (Gemini)      │  │
-│  └─────────────┘    └──────────────────┘    └───────────────────────────┘  │
-│                              │                           │                  │
-│                              ▼                           ▼                  │
-│                     ┌────────────────┐         ┌─────────────────────┐     │
-│                     │ Raw Findings   │         │ Enriched Reports    │     │
-│                     │ (JSON)         │         │ (Impact, Remediation)│    │
-│                     └────────────────┘         └─────────────────────┘     │
-│                                                          │                  │
-│                                                          ▼                  │
-│                                                ┌─────────────────────┐     │
-│                                                │ PoC Generator       │     │
-│                                                │ (Gemini + Foundry)  │     │
-│                                                └─────────────────────┘     │
-│                                                          │                  │
-│                                                          ▼                  │
-│                                                ┌─────────────────────┐     │
-│                                                │ Foundry Executor    │     │
-│                                                │ (Verify Exploits)   │     │
-│                                                └─────────────────────┘     │
-│                                                          │                  │
-│                                                          ▼                  │
-│                                                ┌─────────────────────┐     │
-│                                                │ Audit Report        │     │
-│                                                │ (MD / JSON)         │     │
-│                                                └─────────────────────┘     │
-└────────────────────────────────────────────────────────────────────────────┘
-```
 
 ## Installation
 
