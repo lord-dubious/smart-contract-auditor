@@ -13,8 +13,8 @@ import structlog
 from contract_auditor.models import (
     AuditConfig,
     ContractInfo,
-    SlitherFinding,
     Severity,
+    SlitherFinding,
 )
 
 logger = structlog.get_logger()
@@ -41,6 +41,7 @@ class SlitherAnalyzer:
         """
         self.config = config
         self._mock_findings: list[dict[str, Any]] = []
+        self.last_run_error = ""
 
     def set_mock_findings(self, findings: list[dict[str, Any]]) -> None:
         """Set mock findings for testing.
@@ -60,6 +61,7 @@ class SlitherAnalyzer:
             List of Slither findings
         """
         if self.config.mock_mode:
+            logger.info("slither_mock_mode_enabled", target=file_path)
             return self._get_mock_findings(file_path)
 
         return await self._run_slither(file_path)
@@ -74,6 +76,7 @@ class SlitherAnalyzer:
             List of Slither findings
         """
         if self.config.mock_mode:
+            logger.info("slither_mock_mode_enabled", target=contract.file_path)
             return self._get_mock_findings(contract.file_path)
 
         # If we have source code but no file, write to temp file
@@ -99,6 +102,7 @@ class SlitherAnalyzer:
             List of all Slither findings
         """
         if self.config.mock_mode:
+            logger.info("slither_mock_mode_enabled", target=dir_path)
             return self._get_mock_findings(dir_path)
 
         return await self._run_slither(dir_path)
@@ -113,6 +117,7 @@ class SlitherAnalyzer:
             List of parsed Slither findings
         """
         logger.info("running_slither", target=target)
+        self.last_run_error = ""
 
         try:
             result = subprocess.run(
@@ -131,19 +136,40 @@ class SlitherAnalyzer:
             output = result.stdout or result.stderr
 
             if not output:
-                logger.warning("slither_no_output", target=target)
+                self.last_run_error = "Slither produced no JSON output"
+                logger.warning(
+                    "slither_no_output",
+                    target=target,
+                    returncode=result.returncode,
+                )
                 return []
 
-            return self._parse_slither_output(output)
+            findings = self._parse_slither_output(output)
+            if self.last_run_error:
+                logger.warning(
+                    "slither_parse_failed",
+                    target=target,
+                    returncode=result.returncode,
+                    error=self.last_run_error,
+                )
+            return findings
 
-        except subprocess.TimeoutExpired:
-            logger.error("slither_timeout", target=target)
+        except subprocess.TimeoutExpired as e:
+            self.last_run_error = f"Slither timed out after {self.config.slither_timeout}s"
+            logger.error(
+                "slither_timeout",
+                target=target,
+                timeout=self.config.slither_timeout,
+                error=str(e),
+            )
             return []
         except FileNotFoundError:
-            logger.error("slither_not_found", path=self.config.slither_path)
+            self.last_run_error = f"Slither binary not found: {self.config.slither_path}"
+            logger.error("slither_not_found", target=target, path=self.config.slither_path)
             return []
         except Exception as e:
-            logger.error("slither_error", error=str(e))
+            self.last_run_error = f"Slither execution failed: {e}"
+            logger.error("slither_error", target=target, error=str(e), exc_info=True)
             return []
 
     def _parse_slither_output(self, output: str) -> list[SlitherFinding]:
@@ -158,7 +184,8 @@ class SlitherAnalyzer:
         try:
             data = json.loads(output)
         except json.JSONDecodeError:
-            logger.error("slither_json_parse_error")
+            self.last_run_error = "Slither output was not valid JSON"
+            logger.error("slither_json_parse_error", output_preview=output[:500])
             return []
 
         findings: list[SlitherFinding] = []
@@ -209,7 +236,7 @@ class SlitherAnalyzer:
             for elem in elements:
                 if "source_mapping" in elem:
                     lines = elem["source_mapping"].get("lines", [])
-                    source_lines.extend([str(l) for l in lines])
+                    source_lines.extend([str(line) for line in lines])
 
                 if elem.get("type") == "function":
                     function_name = elem.get("name", "")

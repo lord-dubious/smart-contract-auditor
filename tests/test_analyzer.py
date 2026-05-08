@@ -1,9 +1,7 @@
 """Tests for Slither analyzer."""
 
-import pytest
-
-from contract_auditor.models import AuditConfig, Severity
 from contract_auditor.analyzer import SlitherAnalyzer, create_analyzer
+from contract_auditor.models import AuditConfig, Severity
 
 
 class TestSlitherAnalyzer:
@@ -85,6 +83,16 @@ class TestSlitherAnalyzer:
         assert len(findings) == 1
         assert findings[0].detector == "test-detector"
         assert findings[0].severity == Severity.MEDIUM
+
+    async def test_missing_slither_records_failure(self):
+        """Test missing Slither is recorded instead of appearing successful."""
+        config = AuditConfig(mock_mode=False, slither_path="/missing/slither")
+        analyzer = SlitherAnalyzer(config)
+
+        findings = await analyzer.analyze_file("/test.sol")
+
+        assert findings == []
+        assert "Slither binary not found" in analyzer.last_run_error
 
     def test_get_detector_info(self, mock_config):
         """Test getting detector information."""

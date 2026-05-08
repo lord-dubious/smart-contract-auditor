@@ -1,14 +1,12 @@
 """Test fixtures for Smart Contract Auditor."""
 
-import os
 import pytest
 
 from contract_auditor.models import (
     AuditConfig,
     ContractInfo,
-    SlitherFinding,
     Severity,
-    VulnerabilityType,
+    SlitherFinding,
 )
 
 
@@ -42,19 +40,19 @@ pragma solidity ^0.8.0;
 
 contract VulnerableVault {
     mapping(address => uint256) public balances;
-    
+
     function deposit() external payable {
         balances[msg.sender] += msg.value;
     }
-    
+
     function withdraw() external {
         uint256 amount = balances[msg.sender];
         require(amount > 0, "No balance");
-        
+
         // Vulnerable: external call before state update
         (bool success, ) = msg.sender.call{value: amount}("");
         require(success, "Transfer failed");
-        
+
         balances[msg.sender] = 0;
     }
 }
@@ -125,31 +123,31 @@ pragma solidity ^0.8.0;
 
 contract InsecureBank {
     mapping(address => uint256) private balances;
-    
+
     event Deposit(address indexed user, uint256 amount);
     event Withdrawal(address indexed user, uint256 amount);
-    
+
     function deposit() external payable {
         balances[msg.sender] += msg.value;
         emit Deposit(msg.sender, msg.value);
     }
-    
+
     // VULNERABILITY: Reentrancy
     function withdraw() external {
         uint256 balance = balances[msg.sender];
         require(balance > 0, "Insufficient balance");
-        
+
         (bool success, ) = msg.sender.call{value: balance}("");
         require(success, "Transfer failed");
-        
+
         balances[msg.sender] = 0;  // State update after external call
     }
-    
+
     // VULNERABILITY: tx.origin
     function transferOwnership(address newOwner) external {
         require(tx.origin == msg.sender, "Not owner");  // Unsafe tx.origin
     }
-    
+
     function getBalance(address user) external view returns (uint256) {
         return balances[user];
     }

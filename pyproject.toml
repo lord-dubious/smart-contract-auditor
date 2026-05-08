@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "contract-auditor"
 version = "0.1.0"
-description = "AI-powered smart contract auditor using Slither, Foundry, and Gemini"
+description = "Experimental smart contract audit pipeline using Slither, Foundry, and Gemini"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"

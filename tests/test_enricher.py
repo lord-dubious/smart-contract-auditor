@@ -1,17 +1,15 @@
 """Tests for vulnerability enricher."""
 
-import pytest
-
-from contract_auditor.models import (
-    AuditConfig,
-    SlitherFinding,
-    Severity,
-    VulnerabilityType,
-)
 from contract_auditor.enricher import (
+    DETECTOR_TO_VULN_TYPE,
     VulnerabilityEnricher,
     create_enricher,
-    DETECTOR_TO_VULN_TYPE,
+)
+from contract_auditor.models import (
+    AuditConfig,
+    Severity,
+    SlitherFinding,
+    VulnerabilityType,
 )
 
 
@@ -88,6 +86,17 @@ class TestVulnerabilityEnricher:
 
         assert len(reports) == len(sample_findings)
         assert all(r.finding in sample_findings for r in reports)
+
+    async def test_missing_gemini_uses_explicit_fallback(self, sample_finding):
+        """Test Gemini unavailability is marked as fallback, not confirmed enrichment."""
+        config = AuditConfig(mock_mode=False, gemini_api_key="")
+        enricher = VulnerabilityEnricher(config)
+
+        report = await enricher.enrich(sample_finding)
+
+        assert report.enrichment_source == "fallback"
+        assert "Gemini model is not configured" in report.enrichment_error
+        assert "manual" in report.remediation.lower()
 
     def test_classify_vulnerability(self, mock_config):
         """Test vulnerability classification."""

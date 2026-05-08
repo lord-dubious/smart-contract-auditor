@@ -1,4 +1,4 @@
-"""AI-powered Proof of Concept exploit generator using Foundry."""
+"""Gemini-backed Proof of Concept generator using Foundry."""
 
 from __future__ import annotations
 
@@ -14,9 +14,9 @@ import structlog
 
 from contract_auditor.models import (
     AuditConfig,
-    VulnerabilityReport,
     ExploitPoC,
     FoundryTestResult,
+    VulnerabilityReport,
     VulnerabilityType,
 )
 
@@ -64,7 +64,7 @@ Respond with only the JSON, no additional text.
 
 
 class PoCGenerator:
-    """Generates Proof of Concept exploits using AI and Foundry."""
+    """Generates Proof of Concept exploits with explicit fallback metadata."""
 
     def __init__(self, config: AuditConfig) -> None:
         """Initialize the PoC generator.
@@ -89,6 +89,7 @@ class PoCGenerator:
             Generated PoC exploit
         """
         if self.config.mock_mode:
+            logger.info("poc_mock_mode_enabled", vulnerability_id=vulnerability.id)
             return self._get_mock_poc(vulnerability)
 
         return await self._generate_with_ai(vulnerability)
@@ -116,8 +117,10 @@ class PoCGenerator:
                 prerequisites=poc.prerequisites,
                 executed=True,
                 success=True,
-                execution_output="[PASS] test_exploit (gas: 123456)",
+                execution_output="MOCK MODE: [PASS] test_exploit (gas: 123456)",
                 gas_used=123456,
+                generation_source=poc.generation_source,
+                generation_error=poc.generation_error,
             )
 
         return await self._execute_poc(poc)
@@ -163,6 +166,16 @@ class PoCGenerator:
             attack_vector=vulnerability.attack_vector,
         )
 
+        if self._model is None:
+            reason = "Gemini model is not configured"
+            logger.warning(
+                "poc_generation_model_unavailable",
+                vulnerability_id=vulnerability.id,
+                vuln_type=vulnerability.vulnerability_type.value,
+                reason=reason,
+            )
+            return self._get_fallback_poc(vulnerability, reason)
+
         try:
             response = self._model.generate_content(prompt)
             poc_data = self._extract_json(response.text)
@@ -175,11 +188,18 @@ class PoCGenerator:
                 setup_code=poc_data.get("setup_code", ""),
                 attack_steps=poc_data.get("attack_steps", []),
                 prerequisites=poc_data.get("prerequisites", []),
+                generation_source="gemini",
             )
 
         except Exception as e:
-            logger.error("poc_generation_error", error=str(e))
-            return self._get_fallback_poc(vulnerability)
+            reason = f"Gemini PoC generation failed: {e}"
+            logger.error(
+                "poc_generation_error",
+                vulnerability_id=vulnerability.id,
+                error=str(e),
+                exc_info=True,
+            )
+            return self._get_fallback_poc(vulnerability, reason)
 
     async def _execute_poc(self, poc: ExploitPoC) -> ExploitPoC:
         """Execute a PoC using Foundry.
@@ -199,11 +219,57 @@ class PoCGenerator:
             test_file.write_text(poc.solidity_code)
 
             # Initialize foundry project
-            subprocess.run(
-                ["forge", "init", "--no-commit", "--no-git"],
-                cwd=tmpdir,
-                capture_output=True,
-            )
+            try:
+                init_result = subprocess.run(
+                    [self.config.forge_path, "init", "--no-commit", "--no-git"],
+                    cwd=tmpdir,
+                    capture_output=True,
+                    text=True,
+                )
+            except FileNotFoundError as e:
+                logger.error(
+                    "foundry_init_tool_not_found",
+                    poc_name=poc.name,
+                    path=self.config.forge_path,
+                    error=str(e),
+                )
+                return ExploitPoC(
+                    vulnerability_id=poc.vulnerability_id,
+                    name=poc.name,
+                    description=poc.description,
+                    solidity_code=poc.solidity_code,
+                    setup_code=poc.setup_code,
+                    attack_steps=poc.attack_steps,
+                    prerequisites=poc.prerequisites,
+                    executed=False,
+                    success=False,
+                    execution_output=f"Forge binary not found: {self.config.forge_path}",
+                    generation_source=poc.generation_source,
+                    generation_error=poc.generation_error,
+                )
+
+            if init_result.returncode != 0:
+                output = init_result.stdout + init_result.stderr
+                logger.error(
+                    "foundry_init_failed",
+                    poc_name=poc.name,
+                    returncode=init_result.returncode,
+                    output=output[:500],
+                )
+                return ExploitPoC(
+                    vulnerability_id=poc.vulnerability_id,
+                    name=poc.name,
+                    description=poc.description,
+                    solidity_code=poc.solidity_code,
+                    setup_code=poc.setup_code,
+                    attack_steps=poc.attack_steps,
+                    prerequisites=poc.prerequisites,
+                    executed=False,
+                    success=False,
+                    execution_output=f"Foundry project initialization failed: {output[:2000]}",
+                    generation_source=poc.generation_source,
+                    generation_error=poc.generation_error,
+                )
 
             try:
                 result = subprocess.run(
@@ -233,6 +299,8 @@ class PoCGenerator:
                     success=success,
                     execution_output=output[:2000],  # Truncate long output
                     gas_used=gas_used,
+                    generation_source=poc.generation_source,
+                    generation_error=poc.generation_error,
                 )
 
             except subprocess.TimeoutExpired:
@@ -248,9 +316,16 @@ class PoCGenerator:
                     executed=True,
                     success=False,
                     execution_output="Execution timed out",
+                    generation_source=poc.generation_source,
+                    generation_error=poc.generation_error,
                 )
-            except Exception as e:
-                logger.error("poc_execution_error", error=str(e))
+            except FileNotFoundError as e:
+                logger.error(
+                    "poc_execution_tool_not_found",
+                    poc_name=poc.name,
+                    path=self.config.forge_path,
+                    error=str(e),
+                )
                 return ExploitPoC(
                     vulnerability_id=poc.vulnerability_id,
                     name=poc.name,
@@ -259,9 +334,27 @@ class PoCGenerator:
                     setup_code=poc.setup_code,
                     attack_steps=poc.attack_steps,
                     prerequisites=poc.prerequisites,
-                    executed=True,
+                    executed=False,
+                    success=False,
+                    execution_output=f"Forge binary not found: {self.config.forge_path}",
+                    generation_source=poc.generation_source,
+                    generation_error=poc.generation_error,
+                )
+            except Exception as e:
+                logger.error("poc_execution_error", poc_name=poc.name, error=str(e), exc_info=True)
+                return ExploitPoC(
+                    vulnerability_id=poc.vulnerability_id,
+                    name=poc.name,
+                    description=poc.description,
+                    solidity_code=poc.solidity_code,
+                    setup_code=poc.setup_code,
+                    attack_steps=poc.attack_steps,
+                    prerequisites=poc.prerequisites,
+                    executed=False,
                     success=False,
                     execution_output=str(e),
+                    generation_source=poc.generation_source,
+                    generation_error=poc.generation_error,
                 )
 
     def run_foundry_test(self, test_file: str, test_name: str) -> FoundryTestResult:
@@ -275,11 +368,12 @@ class PoCGenerator:
             Test execution result
         """
         if self.config.mock_mode:
+            logger.info("foundry_mock_mode_enabled", test_file=test_file, test_name=test_name)
             return FoundryTestResult(
                 test_name=test_name,
                 passed=True,
                 gas_used=100000,
-                logs=["Exploit successful!"],
+                logs=["MOCK MODE: exploit marked successful for demo/testing only"],
             )
 
         try:
@@ -316,6 +410,13 @@ class PoCGenerator:
             )
 
         except Exception as e:
+            logger.error(
+                "foundry_test_error",
+                test_file=test_file,
+                test_name=test_name,
+                error=str(e),
+                exc_info=True,
+            )
             return FoundryTestResult(
                 test_name=test_name,
                 passed=False,
@@ -335,12 +436,16 @@ class PoCGenerator:
         json_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
         if json_match:
             try:
-                return json.loads(json_match.group(1))
+                parsed = json.loads(json_match.group(1))
+                if isinstance(parsed, dict):
+                    return {str(key): value for key, value in parsed.items()}
             except json.JSONDecodeError:
                 pass
 
         try:
-            return json.loads(text)
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                return {str(key): value for key, value in parsed.items()}
         except json.JSONDecodeError:
             pass
 
@@ -356,11 +461,13 @@ class PoCGenerator:
             Mock PoC
         """
         if vulnerability.vulnerability_type == VulnerabilityType.REENTRANCY:
-            return self._get_reentrancy_poc(vulnerability)
+            poc = self._get_reentrancy_poc(vulnerability)
         elif vulnerability.vulnerability_type == VulnerabilityType.UNCHECKED_CALL:
-            return self._get_unchecked_call_poc(vulnerability)
+            poc = self._get_unchecked_call_poc(vulnerability)
         else:
-            return self._get_generic_poc(vulnerability)
+            poc = self._get_generic_poc(vulnerability)
+
+        return poc.model_copy(update={"generation_source": "mock"})
 
     def _get_reentrancy_poc(self, vulnerability: VulnerabilityReport) -> ExploitPoC:
         """Generate reentrancy exploit PoC."""
@@ -375,19 +482,19 @@ import "forge-std/Test.sol";
 // Simplified vulnerable contract for testing
 contract {contract_name} {{
     mapping(address => uint256) public balances;
-    
+
     function deposit() external payable {{
         balances[msg.sender] += msg.value;
     }}
-    
+
     function {function_name}() external {{
         uint256 amount = balances[msg.sender];
         require(amount > 0, "No balance");
-        
+
         // Vulnerable: external call before state update
         (bool success, ) = msg.sender.call{{value: amount}}("");
         require(success, "Transfer failed");
-        
+
         balances[msg.sender] = 0;
     }}
 }}
@@ -395,16 +502,16 @@ contract {contract_name} {{
 contract Attacker {{
     {contract_name} public target;
     uint256 public attackCount;
-    
+
     constructor(address _target) {{
         target = {contract_name}(_target);
     }}
-    
+
     function attack() external payable {{
         target.deposit{{value: msg.value}}();
         target.{function_name}();
     }}
-    
+
     receive() external payable {{
         if (address(target).balance >= 1 ether && attackCount < 10) {{
             attackCount++;
@@ -416,26 +523,26 @@ contract Attacker {{
 contract ReentrancyExploitTest is Test {{
     {contract_name} public vulnerable;
     Attacker public attacker;
-    
+
     function setUp() public {{
         vulnerable = new {contract_name}();
         attacker = new Attacker(address(vulnerable));
-        
+
         // Fund the vulnerable contract
         vm.deal(address(this), 10 ether);
         vulnerable.deposit{{value: 10 ether}}();
     }}
-    
+
     function test_exploitReentrancy() public {{
         uint256 initialBalance = address(vulnerable).balance;
         assertEq(initialBalance, 10 ether);
-        
+
         // Fund attacker
         vm.deal(address(attacker), 1 ether);
-        
+
         // Execute attack
         attacker.attack{{value: 1 ether}}();
-        
+
         // Verify exploit succeeded - attacker drained funds
         assertLt(address(vulnerable).balance, initialBalance);
         assertGt(address(attacker).balance, 1 ether);
@@ -477,10 +584,10 @@ contract UncheckedCallTest is Test {
     function test_uncheckedCallFails() public {
         // Demonstrate that unchecked calls can silently fail
         address target = address(0x1234);
-        
+
         // This call fails but contract doesn't revert
         (bool success, ) = target.call("");
-        
+
         // Without checking success, the contract continues
         assertFalse(success);
     }
@@ -512,7 +619,7 @@ contract GenericExploitTest is Test {{
         // Vulnerability: {vulnerability.title}
         // Contract: {vulnerability.finding.contract_name}
         // Function: {vulnerability.finding.function_name}
-        
+
         assertTrue(true, "Placeholder test");
     }}
 }}
@@ -522,9 +629,17 @@ contract GenericExploitTest is Test {{
             prerequisites=[],
         )
 
-    def _get_fallback_poc(self, vulnerability: VulnerabilityReport) -> ExploitPoC:
+    def _get_fallback_poc(
+        self, vulnerability: VulnerabilityReport, reason: str = "Gemini PoC generation failed"
+    ) -> ExploitPoC:
         """Generate fallback PoC when AI fails."""
-        return self._get_generic_poc(vulnerability)
+        poc = self._get_generic_poc(vulnerability)
+        return poc.model_copy(
+            update={
+                "generation_source": "fallback",
+                "generation_error": reason,
+            }
+        )
 
 
 def create_poc_generator(config: AuditConfig | None = None) -> PoCGenerator:

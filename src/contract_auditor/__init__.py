@@ -1,25 +1,25 @@
-"""Smart Contract Auditor - AI-powered security auditing for Solidity contracts.
+"""Smart Contract Auditor - experimental checks for Solidity contracts.
 
 This package provides tools for analyzing smart contracts using Slither static analysis
-combined with Gemini AI for intelligent vulnerability detection and PoC generation.
+combined with optional Gemini enrichment and Foundry PoC generation.
 """
 
+from contract_auditor.analyzer import SlitherAnalyzer, create_analyzer
+from contract_auditor.auditor import ContractAuditor, create_auditor
+from contract_auditor.enricher import VulnerabilityEnricher, create_enricher
 from contract_auditor.models import (
     AuditConfig,
+    AuditResult,
     ContractInfo,
+    ExploitPoC,
+    Severity,
     SlitherFinding,
     VulnerabilityReport,
-    ExploitPoC,
-    AuditResult,
-    Severity,
     VulnerabilityType,
     create_config,
     create_vulnerability_report,
 )
-from contract_auditor.analyzer import SlitherAnalyzer, create_analyzer
-from contract_auditor.enricher import VulnerabilityEnricher, create_enricher
 from contract_auditor.poc_generator import PoCGenerator, create_poc_generator
-from contract_auditor.auditor import ContractAuditor, create_auditor
 
 __version__ = "0.1.0"
 

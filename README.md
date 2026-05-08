@@ -1,15 +1,45 @@
 # Smart Contract Auditor
 
-An AI-powered smart contract security auditor that combines **Slither** static analysis with **Gemini AI** for intelligent vulnerability detection and **Foundry** for Proof of Concept exploit generation.
+An experimental smart contract security audit pipeline that combines **Slither** static analysis, optional **Gemini** enrichment, and optional **Foundry** Proof of Concept checks.
 
 ## Features
 
-- **Slither Integration**: Leverages Slither's comprehensive static analysis for initial vulnerability detection
-- **AI-Powered Enrichment**: Uses Gemini AI to provide detailed vulnerability descriptions, impact analysis, and remediation guidance
-- **PoC Generation**: Automatically generates Foundry test cases that prove vulnerabilities are exploitable
-- **Vulnerability Verification**: Executes generated PoCs to verify vulnerabilities with 100% certainty
+- **Slither Integration**: Runs Slither static analysis for initial vulnerability detection
+- **Gemini Enrichment**: Uses Gemini, when configured, to draft vulnerability descriptions, impact analysis, and remediation guidance
+- **PoC Generation**: Generates Foundry test cases for high and critical findings when enabled
+- **Vulnerability Checks**: Executes generated PoCs and records whether Foundry ran and passed
 - **MITRE-style Classification**: Categorizes vulnerabilities into standardized types (Reentrancy, Access Control, etc.)
-- **Comprehensive Reporting**: Generates detailed audit reports in Markdown or JSON format
+- **Reporting**: Generates audit reports in Markdown or JSON format
+
+## What Works Today
+
+- Loads Solidity files or directories and sends them through Slither.
+- Converts Slither detector output into typed findings and severity counts.
+- Optionally asks Gemini to enrich findings with narrative impact/remediation text.
+- Optionally generates and runs Foundry tests for high/critical findings.
+- Provides explicit metadata when Gemini, Slither, or Foundry cannot complete a step.
+
+## Current Limits
+
+- This is not a replacement for manual review by a smart contract security engineer.
+- Gemini-generated descriptions and PoCs may be incomplete or wrong and require review.
+- A passing generated Foundry test only shows that one generated scenario passed; it does not prove exploitability with certainty.
+- Slither coverage depends on the installed Slither version, compiler setup, project layout, and dependency resolution.
+
+## Dependency Behavior
+
+- `AUDIT_MOCK_MODE=true` uses deterministic demo data and does not contact Slither, Gemini, or Foundry. Mock successes are for tests/demos only.
+- Missing or failing Slither runs preserve API compatibility by returning no findings, but audit results include `analysis_warnings` and logs include target/path context.
+- Missing or failing Gemini enrichment returns a fallback report with `enrichment_source="fallback"` and an `enrichment_error` message.
+- Missing or failing Gemini PoC generation returns a placeholder PoC with `generation_source="fallback"` and a `generation_error` message.
+- Missing or failing Foundry setup/execution marks the PoC as unsuccessful and includes the failure in `execution_output`.
+
+## Safety/Verification Boundaries
+
+- Treat all output as triage assistance, not an audit certificate.
+- Verify findings against source code, compiler settings, deployment assumptions, and protocol context.
+- Do not treat mock mode output as real security evidence.
+- Review generated PoCs before running them against real projects or live infrastructure.
 
 ## Architecture
 
@@ -209,6 +239,7 @@ print(report)
 | `AUDIT_SEVERITY_THRESHOLD` | Minimum severity to report | `medium` |
 | `AUDIT_GENERATE_POC` | Generate PoC exploits | `true` |
 | `AUDIT_MAX_CONTRACTS` | Max contracts per audit | `10` |
+| `AUDIT_MOCK_MODE` | Use deterministic mock/demo data instead of external tools | `false` |
 
 ## Project Structure
 
@@ -218,7 +249,7 @@ smart-contract-auditor/
 │   ├── __init__.py        # Package exports
 │   ├── models.py          # Pydantic data models
 │   ├── analyzer.py        # Slither wrapper
-│   ├── enricher.py        # AI vulnerability enrichment
+│   ├── enricher.py        # Gemini vulnerability enrichment
 │   ├── poc_generator.py   # Foundry PoC generation
 │   ├── auditor.py         # Main orchestrator
 │   └── cli.py             # Typer CLI

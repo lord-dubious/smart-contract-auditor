@@ -1,19 +1,20 @@
 """Tests for data models."""
 
-import pytest
 from datetime import datetime
+
+import pytest
+from pydantic import ValidationError
 
 from contract_auditor.models import (
     AuditConfig,
-    ContractInfo,
-    SlitherFinding,
-    VulnerabilityReport,
-    ExploitPoC,
     AuditResult,
-    Severity,
-    VulnerabilityType,
-    FoundryTestResult,
     AuditStats,
+    ContractInfo,
+    ExploitPoC,
+    FoundryTestResult,
+    Severity,
+    SlitherFinding,
+    VulnerabilityType,
     create_config,
     create_vulnerability_report,
 )
@@ -119,7 +120,7 @@ class TestContractInfo:
 
     def test_contract_info_immutable(self, sample_contract):
         """Test that ContractInfo is immutable."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             sample_contract.name = "NewName"
 
 
